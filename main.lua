@@ -37,7 +37,19 @@ local function getTargetCoords()
     local nz = tonumber(UI.GetValue("tp_z"))
     return nx, ny, nz
 end
+local function getMouseWorldPosition()
+    local mouse = LocalPlayer:GetMouse()
+    if not mouse then
+        return nil
+    end
 
+    local hit = mouse.Hit
+    if not hit then
+        return nil
+    end
+
+    return hit.Position
+end
 local noclipActive = false
 
 local function setNoclip(enabled)
@@ -428,6 +440,31 @@ UI.AddTab("Teleport", function(tab)
         updateEspTarget()
         notify("Fields filled with current position.", "TP GUI", 2)
     end)
+    coordSec:Button("Grab Mouse Position", function()
+    local pos = getMouseWorldPosition()
+
+    if not pos then
+        notify("Could not get mouse world position.", "TP GUI", 3)
+        return
+    end
+
+    UI.SetValue("tp_x", string.format("%.2f", pos.X))
+    UI.SetValue("tp_y", string.format("%.2f", pos.Y))
+    UI.SetValue("tp_z", string.format("%.2f", pos.Z))
+
+    updateEspTarget()
+
+    notify(
+        string.format(
+            "Mouse position grabbed: %.1f, %.1f, %.1f",
+            pos.X,
+            pos.Y,
+            pos.Z
+        ),
+        "TP GUI",
+        2
+    )
+end)
     coordSec:Tip("Fills X/Y/Z with your current world position")
 
     local pathSec = tab:Section("Path Teleport", "Left")
