@@ -68,7 +68,7 @@ local function noclipTick()
 end
 
 local espEnabled   = false
-
+local espColor     = Color3.fromRGB(255, 80, 80)
 local espDrawings  = {}
 local espTargetPos = nil
 
@@ -98,20 +98,22 @@ end
 
 espDrawings = makeEspDrawings()
 
-
+local function updateEspColors()
+    for i = 1, 5 do
+        espDrawings[i].Color = espColor
+    end
+    espDrawings[6].Color = espColor
+end
 
 local espConn = nil
 
 local function startEsp()
     if espConn then return end
-espConn = RunService.RenderStepped:Connect(function()
-    if not espEnabled or not espTargetPos then
-        for _, d in ipairs(espDrawings) do d.Visible = false end
-        return
-    end
-
-
-
+    espConn = RunService.RenderStepped:Connect(function()
+        if not espEnabled or not espTargetPos then
+            for _, d in ipairs(espDrawings) do d.Visible = false end
+            return
+        end
 
         local pos = espTargetPos
         local r   = 3
@@ -464,6 +466,10 @@ UI.AddTab("Teleport", function(tab)
         end
     end)
     espSec:Tip("Draws a marker at the X/Y/Z target position")
+    espSec:ColorPicker("esp_color", 255, 80, 80, 255, function(r, g, b, a)
+        espColor = Color3.new(r, g, b)
+        updateEspColors()
+    end)
     espSec:Tip("Color of the target ESP marker")
     espSec:Button("Refresh ESP Target", function()
         updateEspTarget()
