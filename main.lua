@@ -1,7 +1,8 @@
 --!nonstrict
-local Players     = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
-local RunService  = game:GetService("RunService")
+local Players        = game:GetService("Players")
+local HttpService    = game:GetService("HttpService")
+local RunService     = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -37,6 +38,7 @@ local function getTargetCoords()
     local nz = tonumber(UI.GetValue("tp_z"))
     return nx, ny, nz
 end
+
 local function getMouseWorldPosition()
     local mouse = LocalPlayer:GetMouse()
     if not mouse then
@@ -50,6 +52,7 @@ local function getMouseWorldPosition()
 
     return hit.Position
 end
+
 local noclipActive = false
 
 local function setNoclip(enabled)
@@ -295,13 +298,17 @@ RunService.RenderStepped:Connect(function(dt)
                 velTarget  = nil
                 notify(string.format("Arrived at %.1f, %.1f, %.1f", tgt.X, tgt.Y, tgt.Z), "TP GUI", 2)
             else
-                local speed   = UI.GetValue("velocity_speed") or 150
-                local clamp   = math.min(dist, speed)
-                local unit    = Vector3.new(dx/dist, dy/dist, dz/dist)
+                local speed = UI.GetValue("velocity_speed") or 150
+                local overshoot = UI.GetValue("velocity_overshoot")
+                
+                -- Bypasses clamp checks entirely if overshoot option is toggled on
+                local currentForce = overshoot and speed or math.min(dist, speed)
+                local unit = Vector3.new(dx/dist, dy/dist, dz/dist)
+                
                 root.AssemblyLinearVelocity = Vector3.new(
-                    unit.X * clamp,
-                    unit.Y * clamp,
-                    unit.Z * clamp
+                    unit.X * currentForce,
+                    unit.Y * currentForce,
+                    unit.Z * currentForce
                 )
             end
         end
@@ -379,6 +386,33 @@ local function refreshCombo()
     for _, n in ipairs(getPresetNames()) do presetCombo:Add(n) end
 end
 
+-- Mouse positioning selection hook
+local mouseHookConnection = nil
+local function listenForMouseClick()
+    if mouseHookConnection then mouseHookConnection:Disconnect() end
+    notify("Click anywhere in the game world to select target location...", "TP GUI", 4)
+    
+    mouseHookConnection = UserInputService.InputBegan:Connect(function(input, processed)
+        -- Processed means clicking inside menu/UI items, we only want game clicks
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and not processed then
+            mouseHookConnection:Disconnect()
+            mouseHookConnection = nil
+            
+            local pos = getMouseWorldPosition()
+            if not pos then
+                notify("Could not grab spatial click position.", "TP GUI", 3)
+                return
+            end
+            
+            UI.SetValue("tp_x", string.format("%.2f", pos.X))
+            UI.SetValue("tp_y", string.format("%.2f", pos.Y))
+            UI.SetValue("tp_z", string.format("%.2f", pos.Z))
+            updateEspTarget()
+            notify(string.format("Grabbed spatial coordinate: %.1f, %.1f, %.1f", pos.X, pos.Y, pos.Z), "TP GUI", 2)
+        end
+    end)
+end
+
 UI.AddTab("Teleport", function(tab)
 
     local modeSec = tab:Section("Mode", "Left")
@@ -388,7 +422,8 @@ UI.AddTab("Teleport", function(tab)
     modeSec:SliderFloat("tween_time",    "Tween Time (s)",  0.5, 30,   3,   "%.1f", function(_) end)
     modeSec:Tip("Only used in Tween mode.")
     modeSec:SliderInt("velocity_speed",  "Velocity Speed",  10,  2000, 150,          function(_) end)
-    modeSec:Tip("Only used in Velocity mode. Speed clamps near destination to avoid overshoot.")
+    modeSec:Toggle("velocity_overshoot", "Disable Force Clamping (Overshoot)", false, function(_) end)
+    modeSec:Tip("Bypasses dampening close to arrival to fling character through destinations.")
     modeSec:Button("Cancel / Stop", function()
         local did = false
         if tweenRunning then
@@ -441,31 +476,9 @@ UI.AddTab("Teleport", function(tab)
         notify("Fields filled with current position.", "TP GUI", 2)
     end)
     coordSec:Button("Grab Mouse Position", function()
-    local pos = getMouseWorldPosition()
-
-    if not pos then
-        notify("Could not get mouse world position.", "TP GUI", 3)
-        return
-    end
-
-    UI.SetValue("tp_x", string.format("%.2f", pos.X))
-    UI.SetValue("tp_y", string.format("%.2f", pos.Y))
-    UI.SetValue("tp_z", string.format("%.2f", pos.Z))
-
-    updateEspTarget()
-
-    notify(
-        string.format(
-            "Mouse position grabbed: %.1f, %.1f, %.1f",
-            pos.X,
-            pos.Y,
-            pos.Z
-        ),
-        "TP GUI",
-        2
-    )
-end)
-    coordSec:Tip("Fills X/Y/Z with your current world position")
+        listenForMouseClick()
+    end)
+    coordSec:Tip("Fills X/Y/Z with your next click target in the game world")
 
     local pathSec = tab:Section("Path Teleport", "Left")
 
