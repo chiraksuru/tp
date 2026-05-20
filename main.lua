@@ -387,29 +387,37 @@ local function refreshCombo()
 end
 
 -- Mouse positioning selection hook
+
 local mouseHookConnection = nil
 local function listenForMouseClick()
     if mouseHookConnection then mouseHookConnection:Disconnect() end
+    
+    local mouse = LocalPlayer:GetMouse()
+    if not mouse then 
+        notify("Mouse object not available.", "TP GUI", 3) 
+        return 
+    end
+    
     notify("Click anywhere in the game world to select target location...", "TP GUI", 4)
     
-    mouseHookConnection = UserInputService.InputBegan:Connect(function(input, processed)
-        -- Processed means clicking inside menu/UI items, we only want game clicks
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and not processed then
+    mouseHookConnection = mouse.Button1Down:Connect(function()
+        -- Disconnect immediately so future normal clicks don't re-trigger it
+        if mouseHookConnection then
             mouseHookConnection:Disconnect()
             mouseHookConnection = nil
-            
-            local pos = getMouseWorldPosition()
-            if not pos then
-                notify("Could not grab spatial click position.", "TP GUI", 3)
-                return
-            end
-            
-            UI.SetValue("tp_x", string.format("%.2f", pos.X))
-            UI.SetValue("tp_y", string.format("%.2f", pos.Y))
-            UI.SetValue("tp_z", string.format("%.2f", pos.Z))
-            updateEspTarget()
-            notify(string.format("Grabbed spatial coordinate: %.1f, %.1f, %.1f", pos.X, pos.Y, pos.Z), "TP GUI", 2)
         end
+        
+        local pos = getMouseWorldPosition()
+        if not pos then
+            notify("Could not grab click position.", "TP GUI", 3)
+            return
+        end
+        
+        UI.SetValue("tp_x", string.format("%.2f", pos.X))
+        UI.SetValue("tp_y", string.format("%.2f", pos.Y))
+        UI.SetValue("tp_z", string.format("%.2f", pos.Z))
+        updateEspTarget()
+        notify(string.format("Grabbed coordinate: %.1f, %.1f, %.1f", pos.X, pos.Y, pos.Z), "TP GUI", 2)
     end)
 end
 
