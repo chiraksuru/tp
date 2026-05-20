@@ -1,11 +1,9 @@
 --!nonstrict
-local Players    = game:GetService("Players")
+local Players     = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local RunService  = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
-
--- ─── Preset storage ────────────────────────────────────────────────────────
 
 local PRESET_FILE = "C:/matcha/workspace/tp_presets.json"
 
@@ -27,8 +25,6 @@ end
 
 local presets = loadPresets()
 
--- ─── Helpers ───────────────────────────────────────────────────────────────
-
 local function getRoot()
     local char = LocalPlayer.Character
     if not char then return nil end
@@ -41,7 +37,6 @@ local function getTargetCoords()
     local nz = tonumber(UI.GetValue("tp_z"))
     return nx, ny, nz
 end
--- ─── Noclip ────────────────────────────────────────────────────────────────
 
 local noclipActive = false
 
@@ -49,7 +44,17 @@ local function setNoclip(enabled)
     noclipActive = enabled
 end
 
--- Runs inside the master RenderStepped loop each frame
+local function restoreCollision()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        local ok, isBase = pcall(function() return part:IsA("BasePart") end)
+        if ok and isBase == true then
+            pcall(function() part.CanCollide = true end)
+        end
+    end
+end
+
 local function noclipTick()
     if not noclipActive then return end
     local char = LocalPlayer.Character
@@ -57,62 +62,67 @@ local function noclipTick()
     for _, part in ipairs(char:GetDescendants()) do
         local ok, isBase = pcall(function() return part:IsA("BasePart") end)
         if ok and isBase == true then
-            local ok2, _ = pcall(function() part.CanCollide = false end)
+            pcall(function() part.CanCollide = false end)
         end
     end
 end
 
--- ─── ESP target highlight ──────────────────────────────────────────────────
-
 local espEnabled   = false
+local espColor     = Color3.fromRGB(255, 80, 80)
 local espDrawings  = {}
-local espTargetPos = nil  -- Vector3 or nil
+local espTargetPos = nil
 
 local function makeEspDrawings()
-    -- 4 lines for a ground diamond, 1 vertical line, 1 label
     local d = {}
     for i = 1, 4 do
-        local l = Drawing.new("Line")
-        l.Thickness = 2
-        l.Color     = Color3.fromRGB(255, 80, 80)
-        l.Visible   = false
-        d[i] = l
+        local l        = Drawing.new("Line")
+        l.Thickness    = 2
+        l.Color        = espColor
+        l.Visible      = false
+        d[i]           = l
     end
-    -- vertical pillar line
-    local pillar = Drawing.new("Line")
-    pillar.Thickness = 1
-    pillar.Color     = Color3.fromRGB(255, 80, 80)
-    pillar.Visible   = false
-    d[5] = pillar
-    -- label
-    local lbl = Drawing.new("Text")
-    lbl.Size    = 14
-    lbl.Color   = Color3.fromRGB(255, 80, 80)
-    lbl.Outline = true
-    lbl.Center  = true
-    lbl.Visible = false
-    d[6] = lbl
+    local pillar       = Drawing.new("Line")
+    pillar.Thickness   = 1
+    pillar.Color       = espColor
+    pillar.Visible     = false
+    d[5]               = pillar
+    local lbl          = Drawing.new("Text")
+    lbl.Size           = 14
+    lbl.Color          = espColor
+    lbl.Outline        = true
+    lbl.Center         = true
+    lbl.Visible        = false
+    d[6]               = lbl
     return d
 end
 
 espDrawings = makeEspDrawings()
 
+local function updateEspColors()
+    for i = 1, 6 do
+        espDrawings[i].Color = espColor
+    end
+end
+
 local espConn = nil
 
 local function startEsp()
     if espConn then return end
-    local running = true
-    espConn = RunService.RenderStepped:Connect(function()
-        if not running then return end
-        if not espEnabled or not espTargetPos then
-            for _, d in ipairs(espDrawings) do d.Visible = false end
-            return
-        end
+espConn = RunService.RenderStepped:Connect(function()
+    if not espEnabled or not espTargetPos then
+        for _, d in ipairs(espDrawings) do d.Visible = false end
+        return
+    end
+
+    for i = 1, 6 do
+        espDrawings[i].Color = espColor
+    end
+
+    -- rest of esp loop unchanged ...
 
         local pos = espTargetPos
-        local r   = 3  -- diamond radius
+        local r   = 3
 
-        -- 4 diamond corners at ground level
         local corners3d = {
             Vector3.new(pos.X + r, pos.Y, pos.Z),
             Vector3.new(pos.X - r, pos.Y, pos.Z),
@@ -130,26 +140,22 @@ local function startEsp()
             end
         end
 
-        -- diamond lines: 0-2, 2-1, 1-3, 3-0  (cross pattern)
         local lineMap = { {1,3},{3,2},{2,4},{4,1} }
         for i = 1, 4 do
             local line = espDrawings[i]
             if allOn then
-                local a = corners2d[lineMap[i][1]]
-                local b = corners2d[lineMap[i][2]]
-                line.From    = a
-                line.To      = b
+                line.From    = corners2d[lineMap[i][1]]
+                line.To      = corners2d[lineMap[i][2]]
                 line.Visible = true
             else
                 line.Visible = false
             end
         end
 
-        -- vertical pillar
-        local topPos = Vector3.new(pos.X, pos.Y + 8, pos.Z)
-        local ok1, sc1, on1 = pcall(WorldToScreen, pos)
-        local ok2, sc2, on2 = pcall(WorldToScreen, topPos)
-        local pillar = espDrawings[5]
+        local topPos         = Vector3.new(pos.X, pos.Y + 8, pos.Z)
+        local ok1, sc1, on1  = pcall(WorldToScreen, pos)
+        local ok2, sc2, on2  = pcall(WorldToScreen, topPos)
+        local pillar         = espDrawings[5]
         if ok1 and ok2 and sc1 and sc2 and on1 and on2 then
             pillar.From    = sc1
             pillar.To      = sc2
@@ -158,11 +164,9 @@ local function startEsp()
             pillar.Visible = false
         end
 
-        -- label
         local lbl = espDrawings[6]
         if ok2 and sc2 and on2 then
-            local nx, ny, nz = pos.X, pos.Y, pos.Z
-            lbl.Text     = string.format("TARGET\n%.1f, %.1f, %.1f", nx, ny, nz)
+            lbl.Text     = string.format("TARGET  %.1f, %.1f, %.1f", pos.X, pos.Y, pos.Z)
             lbl.Position = Vector2.new(sc2.X, sc2.Y - 18)
             lbl.Visible  = true
         else
@@ -182,9 +186,6 @@ local function updateEspTarget()
     end
 end
 
--- ─── Teleport modes ────────────────────────────────────────────────────────
-
--- Mode 1: Instant
 local function tpInstant(nx, ny, nz)
     local root = getRoot()
     if not root then notify("No HumanoidRootPart found.", "TP GUI", 2) return end
@@ -193,7 +194,6 @@ local function tpInstant(nx, ny, nz)
     notify(string.format("Teleported to %.1f, %.1f, %.1f", nx, ny, nz), "TP GUI", 2)
 end
 
--- Mode 2: Tween — uses flag instead of Disconnect inside callback (Matcha crashes otherwise)
 local tweenRunning  = false
 local tweenTarget   = nil
 local tweenDuration = 3
@@ -204,59 +204,42 @@ local function tpTween(nx, ny, nz, duration)
     local root = getRoot()
     if not root then notify("No HumanoidRootPart found.", "TP GUI", 2) return end
     if tweenRunning then notify("Cancel the current tween first.", "TP GUI", 2) return end
-
-    -- enable noclip if toggle is on
     if UI.GetValue("tp_noclip") then setNoclip(true) end
-
     tweenRunning  = true
     tweenTarget   = Vector3.new(nx, ny, nz)
     tweenDuration = duration
     tweenElapsed  = 0
     tweenStart    = root.Position
-
-    notify(string.format("Tweening to %.1f, %.1f, %.1f (%.1fs)...", nx, ny, nz, duration), "TP GUI", 2)
+    notify(string.format("Tweening to %.1f, %.1f, %.1f  (%.1fs)", nx, ny, nz, duration), "TP GUI", 2)
 end
 
--- Mode 3: Velocity
 local velRunning = false
 local velTarget  = nil
 
 local function tpVelocity(nx, ny, nz, speed)
     local root = getRoot()
     if not root then notify("No HumanoidRootPart found.", "TP GUI", 2) return end
-
     local startPos = root.Position
-    local dir = Vector3.new(nx - startPos.X, ny - startPos.Y, nz - startPos.Z)
-    local mag = math.sqrt(dir.X*dir.X + dir.Y*dir.Y + dir.Z*dir.Z)
+    local dir      = Vector3.new(nx - startPos.X, ny - startPos.Y, nz - startPos.Z)
+    local mag      = math.sqrt(dir.X*dir.X + dir.Y*dir.Y + dir.Z*dir.Z)
     if mag < 0.01 then notify("Already at destination.", "TP GUI", 2) return end
-
-    -- enable noclip if toggle is on
     if UI.GetValue("tp_noclip") then setNoclip(true) end
-
-    local unit = Vector3.new(dir.X/mag, dir.Y/mag, dir.Z/mag)
-    root.AssemblyLinearVelocity = Vector3.new(unit.X*speed, unit.Y*speed, unit.Z*speed)
-
     velRunning = true
     velTarget  = Vector3.new(nx, ny, nz)
-
-    notify(string.format("Launching toward %.1f, %.1f, %.1f...", nx, ny, nz), "TP GUI", 2)
+    notify(string.format("Launching toward %.1f, %.1f, %.1f", nx, ny, nz), "TP GUI", 2)
 end
-
--- ─── Master RenderStepped loop ─────────────────────────────────────────────
--- One single loop handles both tween and velocity to avoid stacking connections
 
 local masterRunning = true
 RunService.RenderStepped:Connect(function(dt)
     if not masterRunning then return end
-	
-noclipTick() --work plz
-    -- Tween tick
+
+    noclipTick()
+
     if tweenRunning and tweenStart and tweenTarget then
         tweenElapsed = tweenElapsed + dt
         local t = tweenElapsed / tweenDuration
         if t > 1 then t = 1 end
 
-        -- Cubic ease-in-out
         local et
         if t < 0.5 then
             et = 4 * t * t * t
@@ -275,58 +258,48 @@ noclipTick() --work plz
             root.AssemblyLinearVelocity = Vector3.zero
         end
 
-if t >= 1 then
-    tweenRunning = false
-    setNoclip(false)   -- add this
-    -- restore CanCollide on all parts
-    local char = LocalPlayer.Character
-    if char then
-        for _, part in ipairs(char:GetDescendants()) do
-            local ok, isBase = pcall(function() return part:IsA("BasePart") end)
-            if ok and isBase == true then
-                pcall(function() part.CanCollide = true end)
-            end
+        if t >= 1 then
+            tweenRunning = false
+            setNoclip(false)
+            restoreCollision()
+            local tgt = tweenTarget
+            tweenTarget = nil
+            tweenStart  = nil
+            notify(string.format("Arrived at %.1f, %.1f, %.1f", tgt.X, tgt.Y, tgt.Z), "TP GUI", 2)
         end
     end
-    local tgt = tweenTarget
-    notify(string.format("Arrived at %.1f, %.1f, %.1f", tgt.X, tgt.Y, tgt.Z), "TP GUI", 2)
-    tweenTarget = nil
-    tweenStart  = nil
-end
-    end
 
-    -- Velocity arrival check
     if velRunning and velTarget then
         local root = getRoot()
         if root then
-            local cur = root.Position
-            local dx = cur.X - velTarget.X
-            local dy = cur.Y - velTarget.Y
-            local dz = cur.Z - velTarget.Z
+            local cur  = root.Position
+            local dx   = velTarget.X - cur.X
+            local dy   = velTarget.Y - cur.Y
+            local dz   = velTarget.Z - cur.Z
             local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-if dist < 6 then
-    root.CFrame = CFrame.new(velTarget.X, velTarget.Y, velTarget.Z)
-    root.AssemblyLinearVelocity = Vector3.zero
-    setNoclip(false)   -- add this
-    local char = LocalPlayer.Character
-    if char then
-        for _, part in ipairs(char:GetDescendants()) do
-            local ok, isBase = pcall(function() return part:IsA("BasePart") end)
-            if ok and isBase == true then
-                pcall(function() part.CanCollide = true end)
+
+            if dist < 4 then
+                root.CFrame = CFrame.new(velTarget.X, velTarget.Y, velTarget.Z)
+                root.AssemblyLinearVelocity = Vector3.zero
+                setNoclip(false)
+                restoreCollision()
+                velRunning = false
+                local tgt  = velTarget
+                velTarget  = nil
+                notify(string.format("Arrived at %.1f, %.1f, %.1f", tgt.X, tgt.Y, tgt.Z), "TP GUI", 2)
+            else
+                local speed   = UI.GetValue("velocity_speed") or 150
+                local clamp   = math.min(dist, speed)
+                local unit    = Vector3.new(dx/dist, dy/dist, dz/dist)
+                root.AssemblyLinearVelocity = Vector3.new(
+                    unit.X * clamp,
+                    unit.Y * clamp,
+                    unit.Z * clamp
+                )
             end
         end
     end
-    velRunning = false
-    local tgt = velTarget
-    velTarget = nil
-    notify(string.format("Arrived at %.1f, %.1f, %.1f", tgt.X, tgt.Y, tgt.Z), "TP GUI", 2)
-end
-        end
-    end
 end)
-
--- ─── Shared dispatch ───────────────────────────────────────────────────────
 
 local function dispatchTP(nx, ny, nz)
     local mode = UI.GetValue("tp_mode")
@@ -341,8 +314,6 @@ local function dispatchTP(nx, ny, nz)
         tpInstant(nx, ny, nz)
     end
 end
-
--- ─── Path resolver ─────────────────────────────────────────────────────────
 
 local function resolvePath(pathStr)
     if not pathStr or pathStr == "" then return nil, "Empty path" end
@@ -361,7 +332,6 @@ local function resolvePath(pathStr)
     if not current then
         current = game:GetService("Workspace"):FindFirstChild(parts[1])
         if not current then return nil, "Unknown root: " .. parts[1] end
-        startIdx = 2
     end
     for i = startIdx, #parts do
         local child = current:FindFirstChild(parts[i])
@@ -387,8 +357,6 @@ local function getInstancePosition(inst)
     return nil
 end
 
--- ─── Preset helpers ────────────────────────────────────────────────────────
-
 local presetCombo = nil
 
 local function getPresetNames()
@@ -404,76 +372,57 @@ local function refreshCombo()
     for _, n in ipairs(getPresetNames()) do presetCombo:Add(n) end
 end
 
--- ─── UI ────────────────────────────────────────────────────────────────────
-
 UI.AddTab("Teleport", function(tab)
 
-    -- ════════════════ LEFT COLUMN ════════════════
-
-    -- ── Mode + settings ─────────────────────────
     local modeSec = tab:Section("Mode", "Left")
 
     modeSec:Combo("tp_mode", "Mode", {"Instant", "Tween", "Velocity"}, 1, function(_) end)
     modeSec:Tip("Instant: snap  |  Tween: smooth glide  |  Velocity: physics launch")
-
-    modeSec:SliderFloat("tween_time",     "Tween Time (s)",   0.5, 30,   3,   "%.1f", function(_) end)
-    modeSec:Tip("Duration of tween. Only used in Tween mode.")
-
-    modeSec:SliderInt("velocity_speed", "Velocity Speed",  10,  2000, 150,        function(_) end)
-    modeSec:Tip("Launch speed in studs/s. Only used in Velocity mode.")
-
-    modeSec:Button("Cancel Tween / Stop Velocity", function()
-        local didSomething = false
+    modeSec:SliderFloat("tween_time",    "Tween Time (s)",  0.5, 30,   3,   "%.1f", function(_) end)
+    modeSec:Tip("Only used in Tween mode.")
+    modeSec:SliderInt("velocity_speed",  "Velocity Speed",  10,  2000, 150,          function(_) end)
+    modeSec:Tip("Only used in Velocity mode. Speed clamps near destination to avoid overshoot.")
+    modeSec:Button("Cancel / Stop", function()
+        local did = false
         if tweenRunning then
             tweenRunning = false
             tweenTarget  = nil
             tweenStart   = nil
-            didSomething = true
+            did          = true
         end
         if velRunning then
             velRunning = false
             velTarget  = nil
             local root = getRoot()
             if root then root.AssemblyLinearVelocity = Vector3.zero end
-            didSomething = true
+            did = true
         end
-        notify(didSomething and "Stopped." or "Nothing was running.", "TP GUI", 2)
-    end)
-	-- NOCLIP
-modeSec:Toggle("tp_noclip", "Noclip During Movement", false, function(val)
-    -- if manually toggled off while moving, restore collision immediately
-    if not val then
         setNoclip(false)
-        local char = LocalPlayer.Character
-        if char then
-            for _, part in ipairs(char:GetDescendants()) do
-                local ok, isBase = pcall(function() return part:IsA("BasePart") end)
-                if ok and isBase == true then
-                    pcall(function() part.CanCollide = true end)
-                end
-            end
+        restoreCollision()
+        notify(did and "Stopped." or "Nothing running.", "TP GUI", 2)
+    end)
+    modeSec:Toggle("tp_noclip", "Noclip During Movement", false, function(val)
+        if not val then
+            setNoclip(false)
+            restoreCollision()
         end
-    end
-end)
-modeSec:Tip("Disables collision on your character during Tween/Velocity. Auto-restores on arrival.")
+    end)
+    modeSec:Tip("Disables collision while moving. Auto-restores on arrival.")
 
-    -- ── Coordinates ─────────────────────────────
     local coordSec = tab:Section("Coordinates", "Left")
 
     coordSec:InputText("tp_x", "X", "0",  function(_) updateEspTarget() end)
     coordSec:InputText("tp_y", "Y", "50", function(_) updateEspTarget() end)
     coordSec:InputText("tp_z", "Z", "0",  function(_) updateEspTarget() end)
     coordSec:Spacing()
-
     coordSec:Button("Teleport", function()
         local nx, ny, nz = getTargetCoords()
         if not nx or not ny or not nz then
-            notify("Invalid coordinates — numbers only.", "TP GUI", 3)
+            notify("Invalid coordinates.", "TP GUI", 3)
             return
         end
         dispatchTP(nx, ny, nz)
     end)
-
     coordSec:Button("Grab My Position", function()
         local root = getRoot()
         if not root then notify("No character found.", "TP GUI", 2) return end
@@ -482,17 +431,15 @@ modeSec:Tip("Disables collision on your character during Tween/Velocity. Auto-re
         UI.SetValue("tp_y", string.format("%.2f", pos.Y))
         UI.SetValue("tp_z", string.format("%.2f", pos.Z))
         updateEspTarget()
-        notify("Fields filled with your current position.", "TP GUI", 2)
+        notify("Fields filled with current position.", "TP GUI", 2)
     end)
     coordSec:Tip("Fills X/Y/Z with your current world position")
 
-    -- ── Path teleport ────────────────────────────
     local pathSec = tab:Section("Path Teleport", "Left")
 
     pathSec:Text("e.g. Workspace.Map.SpawnPoint")
     pathSec:InputText("tp_path", "Path", "Workspace.", function(_) end)
     pathSec:Spacing()
-
     pathSec:Button("Teleport to Path", function()
         local inst, err = resolvePath(UI.GetValue("tp_path"))
         if not inst then notify("Path error: " .. (err or "?"), "TP GUI", 4) return end
@@ -500,9 +447,8 @@ modeSec:Tip("Disables collision on your character during Tween/Velocity. Auto-re
         if not pos then notify("Instance has no readable Position.", "TP GUI", 3) return end
         dispatchTP(pos.X, pos.Y + 3, pos.Z)
     end)
-    pathSec:Tip("+3 Y offset so you land on top, not inside")
-
-    pathSec:Button("Copy Path to X/Y/Z Fields", function()
+    pathSec:Tip("+3 Y so you land on top, not inside")
+    pathSec:Button("Copy Path to X/Y/Z", function()
         local inst, err = resolvePath(UI.GetValue("tp_path"))
         if not inst then notify("Path error: " .. (err or "?"), "TP GUI", 4) return end
         local pos = getInstancePosition(inst)
@@ -511,12 +457,9 @@ modeSec:Tip("Disables collision on your character during Tween/Velocity. Auto-re
         UI.SetValue("tp_y", string.format("%.2f", pos.Y + 3))
         UI.SetValue("tp_z", string.format("%.2f", pos.Z))
         updateEspTarget()
-        notify("Coordinates copied to X/Y/Z fields.", "TP GUI", 2)
+        notify("Copied to X/Y/Z fields.", "TP GUI", 2)
     end)
 
-    -- ════════════════ RIGHT COLUMN ════════════════
-
-    -- ── ESP ─────────────────────────────────────
     local espSec = tab:Section("Target ESP", "Right")
 
     espSec:Toggle("esp_enabled", "Show Target Marker", false, function(val)
@@ -528,29 +471,24 @@ modeSec:Tip("Disables collision on your character during Tween/Velocity. Auto-re
         end
     end)
     espSec:Tip("Draws a marker at the X/Y/Z target position")
-
+espSec:ColorPicker("esp_color", 255/255, 80/255, 80/255, 1, function(r, g, b, a)
+    espColor = Color3.new(r, g, b)
+    updateEspColors()
+end)
+    espSec:Tip("Color of the target ESP marker")
     espSec:Button("Refresh ESP Target", function()
         updateEspTarget()
         notify("ESP target updated.", "TP GUI", 2)
     end)
-    espSec:Tip("Press after changing X/Y/Z if the marker didn't move")
 
-    -- ── Presets ──────────────────────────────────
     local presetSec = tab:Section("Presets", "Right")
 
     presetSec:InputText("preset_name", "Name", "MySpot", function(_) end)
-
     presetSec:Button("Save X/Y/Z as Preset", function()
         local name = UI.GetValue("preset_name")
-        if not name or name == "" then
-            notify("Enter a preset name first.", "TP GUI", 3)
-            return
-        end
+        if not name or name == "" then notify("Enter a preset name first.", "TP GUI", 3) return end
         local nx, ny, nz = getTargetCoords()
-        if not nx or not ny or not nz then
-            notify("Fill in valid X/Y/Z coordinates first.", "TP GUI", 3)
-            return
-        end
+        if not nx or not ny or not nz then notify("Fill in valid X/Y/Z first.", "TP GUI", 3) return end
         local found = false
         for _, p in ipairs(presets) do
             if p.name == name then
@@ -564,15 +502,12 @@ modeSec:Tip("Disables collision on your character during Tween/Velocity. Auto-re
         end
         savePresets(presets)
         refreshCombo()
-        notify("Saved preset: " .. name, "TP GUI", 2)
+        notify("Saved: " .. name, "TP GUI", 2)
     end)
-
     presetSec:Spacing()
-
     presetCombo = presetSec:Combo(
         "preset_select", "Saved Presets", getPresetNames(), 1, function(_) end
     )
-
     presetSec:Button("Teleport to Selected", function()
         local idx = UI.GetValue("preset_select")
         if not idx or #presets == 0 then notify("No presets saved yet.", "TP GUI", 3) return end
@@ -584,7 +519,6 @@ modeSec:Tip("Disables collision on your character during Tween/Velocity. Auto-re
         updateEspTarget()
         dispatchTP(preset.x, preset.y, preset.z)
     end)
-
     presetSec:Button("Load into X/Y/Z", function()
         local idx = UI.GetValue("preset_select")
         if not idx or #presets == 0 then notify("No presets saved yet.", "TP GUI", 3) return end
@@ -596,7 +530,6 @@ modeSec:Tip("Disables collision on your character during Tween/Velocity. Auto-re
         updateEspTarget()
         notify("Loaded: " .. preset.name, "TP GUI", 2)
     end)
-
     presetSec:Button("Delete Selected", function()
         local idx = UI.GetValue("preset_select")
         if not idx or #presets == 0 then notify("No presets to delete.", "TP GUI", 2) return end
